@@ -1,0 +1,42 @@
+    def draw_3d(self, surf: pg.Surface) -> None:
+        step_x: int = int(surf.get_width() / self.ray_count)
+
+        for i in range(self.ray_count):
+            ray = self.rays[i]
+
+            if not ray.has_int: continue
+
+            norm_dist: float = ray.plane_dist / (
+                self.tile_map.tile_size * ray.depth
+            )
+            inv_dist: float = 1 - norm_dist
+
+            if inv_dist <= 0: continue
+
+            if not ray.int_axis:
+                color: int = int(inv_dist * 255) << 16
+            else:
+                color: int = (
+                    (int(inv_dist * 255) << 16) +
+                    (int(inv_dist * 128) << 8)
+                )
+
+            min_height: float = 0.2
+            max_height: float = 0.7
+            height_diff: float = max_height - min_height
+            height: int = surf.get_height()
+
+            wall_height: int = int((
+                height_diff * inv_dist + min_height
+                ) * height)
+
+            pos: tuple[int, int] = (
+                step_x * i,
+                int(height / 2 - wall_height / 2)
+            )
+            size: tuple[int, int] = (
+                step_x,
+                wall_height
+            )
+
+            pg.draw.rect(surf, color, (pos, size))
