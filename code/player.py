@@ -14,21 +14,25 @@ class Player:
         self.vel_y: float = 0
         self.speed: float = 0.75
 
-        self.angle: float = -math.pi / 2
+        self.angle: float = 0
         self.rot_vel: float = 0
-        self.rot_speed: float = math.pi / 90
+        self.rot_speed: float = math.pi / 120
         self.mouse_captured: bool = False
 
         self.fov: float = math.pi / 2
         self.ray_count: int = 128
+        self.create_rays()
+
+
+    def create_rays(self) -> None:
         self.rays: list[Ray] = []
         for i in range(self.ray_count):
             t: float = i / (self.ray_count - 1)
-            self.rays.append(Ray(
-                self.x, self.y,
-                self.angle + t * self.fov - self.fov / 2,
-                self.tile_map
-            ))
+            angle: float = self.angle + t * self.fov - self.fov / 2
+            ray: Ray = Ray(self.x, self.y, angle, self.tile_map)
+            ray.i = i
+            self.rays.append(ray)
+
 
     def handle_event(self, event: pg.event.Event) -> None:
         if event.type == pg.KEYDOWN:
@@ -47,7 +51,8 @@ class Player:
                 self.rot_vel = self.rot_speed
             if event.key == pg.K_ESCAPE:
                 self.mouse_captured = not self.mouse_captured
-                print(f"{self.mouse_captured = }")
+                pg.mouse.set_visible(not self.mouse_captured)
+                # print(f"{self.mouse_captured = }")
 
         elif event.type == pg.KEYUP:
             if (event.key == pg.K_SPACE
@@ -110,12 +115,82 @@ class Player:
             ray.update_plane_dist(self.angle)
 
 
+    def is_point_in_fov(self, x: float, y: float) -> bool:
+        x -= self.x
+        y -= self.y
+
+        left_ray: Ray = self.rays[0]
+        right_ray: Ray = self.rays[-1]
+
+        xl = x * left_ray.sign_v
+        yl = y * left_ray.sign_v
+        xr = x * right_ray.sign_v
+        yr = y * right_ray.sign_v
+
+        return (
+            left_ray.slope * xl < yl and
+            right_ray.slope * xr > yr
+        )
+
+
+    def get_camera_edges(self, x: float, y: float) -> tuple[float, float, float, float]:
+        x -= self.x
+        y -= self.y
+
+        left_ray: Ray = self.rays[0]
+        right_ray: Ray = self.rays[-1]
+        parallel_slope: float = math.tan(self.angle + math.pi / 2)
+
+        a: float = (x * parallel_slope - y)
+        x_n: float = a / (parallel_slope - left_ray.slope)
+        x_m: float = a / (parallel_slope - right_ray.slope)
+        y_n: float = x_n * left_ray.slope
+        y_m: float = x_m * right_ray.slope
+
+        return (x_n, x_m, y_m, y_n)
+    
+
+    def get_point_screen_pos(self, x: float, y: float, 
+    edges: tuple[float, float, float, float]) -> float | None:
+        if not self.is_point_in_fov(x, y): return None
+
+        x -= self.x
+        y -= self.y
+
+        x_n, x_m, y_m, y_n = edges
+
+        if ((self.angle >= math.pi / 4
+        and self.angle < math.pi * 3 / 4) or 
+        (self.angle >= math.pi * 5 / 4
+        and self.angle < math.pi * 7 / 4)):
+            t: float = (x - x_m) / (x_n - x_m)
+        else:
+            t: float = (y - y_m) / (y_n - y_m)
+
+        return 1 - t
+        
+
+    def get_point_plane_dist(self, x: float, y: float, 
+    edges: tuple[float, float, float, float]) -> float | None:
+        if not self.is_point_in_fov(x, y): return None
+
+        x -= self.x
+        y -= self.y
+
+        x_n, x_m, y_m, y_n = edges
+        d_n: float = x_n**2 + y_n**2
+
+        return math.sqrt(
+            d_n - ((x_m - x_n) / 2)**2 -
+            ((y_m - y_n) / 2)**2
+        )
+        
     def draw_rays(self, surf: pg.Surface) -> None:
-        for ray in self.rays:
-           ray.draw(surf)
+        self.rays[0].draw(surf)
+        self.rays[-1].draw(surf)
 
 
-    def draw(self, surf: pg.Surface) -> None:
+    def draw_2d(self, surf: pg.Surface) -> None:
         size: int = 8
         points: list[tuple[int, int]] = []
         for i in range(-1, 2):
@@ -133,56 +208,17 @@ class Player:
         pg.draw.polygon(surf, (255, 128, 0), points)
 
 
-    def draw_3d(self, surf: pg.Surface) -> None:
+    def draw_3d(self, surf: pg.Surface, entities: list) -> None:
+        def sort_func(x: any) -> float:
+            if not x.plane_dist is None: return x.plane_dist
+            else: return 0
+
         step_x: int = int(surf.get_width() / self.ray_count)
 
-        for i in range(self.ray_count):
-            ray = self.rays[i]
+        sorted_rays: list[Ray] = self.rays.copy()
+        entities = entities.copy()
+        sorted_rays.sort(key=sort_func, reverse=True)
+        entities.sort(key=sort_func, reverse=True)
 
-            if not ray.has_int: continue
-
-            norm_dist: float = ray.plane_dist / (
-                self.tile_map.tile_size * ray.depth
-            )
-            inv_dist: float = (1 - norm_dist)
-
-            if inv_dist <= 0: continue
-
-            if ray.int_axis == 0:
-                color: int = int(inv_dist * 255) << 16
-            else:
-                color: int = (
-                    (int(inv_dist * 255) << 16) +
-                    (int(inv_dist * 128) << 8)
-                )
-
-            min_height: float = 0.2
-            max_height: float = 0.7
-            height_diff: float = max_height - min_height
-            height: int = surf.get_height()
-
-            wall_height: int = int((
-                height_diff * inv_dist ** 2 + min_height
-            ) * height)
-
-            pos: tuple[int, int] = (
-                step_x * i,
-                int(height / 2 - wall_height / 2)
-            )
-            size: tuple[int, int] = (
-                step_x,
-                wall_height
-            )
-            if ray.tile_int is None:
-                pg.draw.rect(surf, color, (pos, size))
-                continue
-
-            slice_num: int = int(
-                ray.sub_grid_int[ray.int_axis] * ray.tile_int.slice_num
-            )
-            
-            tint: int = int(255 * inv_dist)
-            ray.tile_int.draw(
-                surf, slice_num,
-                (*pos, *size), tint + (tint << 8) + (tint << 16)
-            )
+        for ray in sorted_rays:
+            ray.draw_3d(surf, step_x, ray.i)

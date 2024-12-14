@@ -13,11 +13,11 @@ class TileMap:
 
     def draw(self, surf: pg.Surface) -> None:
         self.draw_tiles(surf)
-        # self.draw_grid(surf)
 
 
     def draw_grid(self, surf: pg.Surface) -> None:
-        color: tuple[int, int, int] = (64, 64, 64)
+        color: int = 0x444444
+
         for i in range(self.map_size[0] + 1):
             y: int = i * self.tile_size
             start: tuple[int, int] = (0, y)
@@ -39,25 +39,20 @@ class TileMap:
 
             if not tile is None:
                 size: tuple[int, int] = (self.tile_size, self.tile_size)
-                pos: tuple[int, int] = tuple(map(
-                    lambda x: self.tile_size * x, self.get_pos(idx)
-                ))
+                pos: tuple[int, int] = (
+                    self.get_pos(idx)[0] * self.tile_size,
+                    self.get_pos(idx)[1] * self.tile_size
+                )
 
-                color: int = 0xFFFFFF
+                color: int = 0xFF0000
                 pg.draw.rect(surf, color, (pos, size))
 
 
-    def get_idx(self, x: int | float, y: int | float) -> int:
-        if type(x) == float: x = int(x / self.tile_size)
-        if type(y) == float: y = int(y / self.tile_size)
-
+    def get_idx(self, x: int, y: int) -> int:
         return y * self.map_size[0] + x
 
 
-    def get_tile(self, x: int | float, y: int | float) -> Tile | None:
-        if type(x) == float: x = int(x / self.tile_size)
-        if type(y) == float: y = int(y / self.tile_size)
-
+    def get_tile(self, x: int, y: int) -> Tile | None:
         return self.grid[self.get_idx(x, y)]
     
 
@@ -66,9 +61,8 @@ class TileMap:
     
 
     def is_pos_in_bounds(self, x: int | float, y: int | float) -> bool:
-        if type(x) == float: x = int(x / self.tile_size)
-        if type(y) == float: y = int(y / self.tile_size)
-
+        x /= self.tile_size
+        y /= self.tile_size
         return (
             x >= 0 and x < self.map_size[0] and
             y >= 0 and y < self.map_size[1]

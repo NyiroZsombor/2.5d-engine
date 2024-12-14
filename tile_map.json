@@ -1,0 +1,7 @@
+[
+    [null, null, "brick", null, null],
+    [null, null, null, null, null],
+    ["brick", null, "block", null, "brick"],
+    [null, null, null, null, null],
+    [null, null, "brick", null, null]
+]
