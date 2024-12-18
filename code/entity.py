@@ -10,7 +10,7 @@ class Entity:
 
     def init() -> None:
         entities: list[str] = []
-        with open("sprites.json") as file:
+        with open("../sprites.json") as file:
             entities = json.load(file)
 
         for name in entities:
@@ -53,20 +53,29 @@ class Entity:
 
 
     def draw_2d(self, surf: pg.Surface) -> None:
-        s: int = 8
-        pg.draw.rect(surf, 0x0000FF,
-            (self.x - s // 2, self.y - s // 2, s, s)
+        scale: tuple[float, float] = (
+            surf.get_width() / 512,
+            surf.get_height() / 512,
         )
+        rx: int = 16 * scale[0]
+        ry: int = 16 * scale[1]
+
+        pg.draw.ellipse(surf, 0xFF0000, (
+            int((self.x - rx // 2) * scale[0]),
+            int((self.y - ry // 2) * scale[1]),
+            rx, ry
+        ))
 
 
     def draw_3d(self, surf: pg.Surface) -> None:
-        if ((self.cam_pos is None or self.plane_dist is None)
-        or self.cam_pos > 1 or self.cam_pos < 0): return
+        if self.cam_pos is None or self.plane_dist is None: return
+        if self.cam_pos > 1 or self.cam_pos < 0: return
+        if self.inv_dist < 0: return
 
         sprite: pg.Surface = Entity.sprites[self.name]
         sprite = pg.transform.scale_by(sprite, self.scale)
 
-        wall_height:float = Ray.calculate_wall_height(
+        wall_height: float = Ray.calculate_wall_height(
             self.inv_dist, Ray.height_diff, Ray.min_height
         ) * surf.get_height()
 
@@ -77,5 +86,9 @@ class Entity:
         y: int = int(
             surf.get_height() / 2 + wall_height / 2 - sprite.get_height()
         )
+
+        tint: int = int(255 * self.inv_dist)
+        tint = tint + (tint << 8) + (tint << 16)
+        sprite.fill(tint, special_flags=pg.BLEND_RGB_MULT)
 
         surf.blit(sprite, (x, y))

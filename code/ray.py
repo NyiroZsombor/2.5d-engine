@@ -6,7 +6,7 @@ from tile import Tile
 class Ray:
     depth: int = 8
     min_height: float = 0.2
-    max_height: float = 0.7
+    max_height: float = 0.8
     height_diff: float = max_height - min_height
 
     def __init__(self, x: float, y: float, angle: float, tile_map: TileMap):

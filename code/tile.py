@@ -7,7 +7,7 @@ class Tile:
 
     def init() -> None:
         textures: list[str] = []
-        with open("textures.json") as file:
+        with open("../textures.json") as file:
             textures = json.load(file)
 
         for name in textures:

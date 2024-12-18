@@ -17,34 +17,53 @@ class TileMap:
 
     def draw_grid(self, surf: pg.Surface) -> None:
         color: int = 0x444444
+        scale: tuple[float, float] = (
+            surf.get_width() / 512,
+            surf.get_height() / 512,
+        )
+        scaling: function = lambda x: int(x * scale)
 
         for i in range(self.map_size[0] + 1):
             y: int = i * self.tile_size
-            start: tuple[int, int] = (0, y)
-            end: tuple[int, int] = (surf.get_width(), y)
+            start: tuple[int, int] = (0, int(y * scale[1]))
+            end: tuple[int, int] = (
+                int(surf.get_width() * scale[0]), int(y * scale[1]))
 
+            start = tuple(map(scaling, start))
+            end = tuple(map(scaling, end))
             pg.draw.line(surf, color, start, end)
 
         for i in range(self.map_size[1] + 1):
             x: int = i * self.tile_size
-            start: tuple[int, int] = (x, 0)
-            end: tuple[int, int] = (x, surf.get_height())
+            start: tuple[int, int] = (int(x * scale[0]), 0)
+            end: tuple[int, int] = (
+                int(x * scale[0]), int(surf.get_height() * scale[1]))
 
+            start = tuple(map(scaling, start))
+            end = tuple(map(scaling, end))
             pg.draw.line(surf, color, start, end)
 
 
     def draw_tiles(self, surf: pg.Surface) -> None:
+        scale: tuple[float, float] = (
+            surf.get_width() / 512,
+            surf.get_height() / 512,
+        )
+
         for idx in range(len(self.grid)):
             tile: Tile | None = self.grid[idx]
 
             if not tile is None:
-                size: tuple[int, int] = (self.tile_size, self.tile_size)
+                size: tuple[int, int] = (
+                    int(self.tile_size * scale[0]),
+                    int(self.tile_size * scale[1])
+                )
                 pos: tuple[int, int] = (
-                    self.get_pos(idx)[0] * self.tile_size,
-                    self.get_pos(idx)[1] * self.tile_size
+                    int(self.get_pos(idx)[0] * self.tile_size * scale[0]),
+                    int(self.get_pos(idx)[1] * self.tile_size * scale[0])
                 )
 
-                color: int = 0xFF0000
+                color: int = 0x008800
                 pg.draw.rect(surf, color, (pos, size))
 
 

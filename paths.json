@@ -1,6 +1,8 @@
 {
-    "assets": "assets",
-    "textures": "assets/textures",
-    "slices": "assets/textures/slices",
-    "sprites": "assets/sprites"
+    "assets": "../assets",
+    "textures": "../assets/textures",
+    "slices": "../assets/textures/slices",
+    "sprites": "../assets/sprites",
+    "ui": "../assets/ui",
+    "fonts": "../assets/fonts"
 }

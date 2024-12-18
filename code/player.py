@@ -23,6 +23,15 @@ class Player:
         self.ray_count: int = 128
         self.create_rays()
 
+        self.actions: dict[str, int] = {
+            "forward": pg.K_w,
+            "backward": pg.K_s,
+            "turn_left": pg.K_LEFT,
+            "turn_right": pg.K_RIGHT,
+            "move_left": pg.K_a,
+            "move_right": pg.K_d
+        }
+
 
     def create_rays(self) -> None:
         self.rays: list[Ray] = []
@@ -36,34 +45,37 @@ class Player:
 
     def handle_event(self, event: pg.event.Event) -> None:
         if event.type == pg.KEYDOWN:
-            if event.key == pg.K_SPACE:
-                self.vel_x = self.speed
-                self.vel_y = self.speed
+            if event.key == self.actions["forward"]:
+                self.vel_x += self.speed
+                self.vel_y += self.speed
 
-            if event.key == pg.K_LSHIFT:
-                self.vel_x = -self.speed
-                self.vel_y = -self.speed
+            elif event.key == self.actions["backward"]:
+                self.vel_x -= self.speed
+                self.vel_y -= self.speed
 
-            elif event.key == pg.K_LEFT:
+            elif event.key == self.actions["turn_left"]:
                 self.rot_vel = -self.rot_speed
 
-            elif event.key == pg.K_RIGHT:
+            elif event.key == self.actions["turn_right"]:
                 self.rot_vel = self.rot_speed
+
             if event.key == pg.K_ESCAPE:
                 self.mouse_captured = not self.mouse_captured
                 pg.mouse.set_visible(not self.mouse_captured)
                 # print(f"{self.mouse_captured = }")
 
         elif event.type == pg.KEYUP:
-            if (event.key == pg.K_SPACE
-            or event.key == pg.K_LSHIFT):
-                self.vel_x = 0
-                self.vel_y = 0
+            if event.key == self.actions["forward"]:
+                self.vel_x -= self.speed
+                self.vel_y -= self.speed
+            elif event.key == self.actions["backward"]:
+                self.vel_x += self.speed
+                self.vel_y += self.speed
 
-            elif event.key == pg.K_LEFT:
+            elif event.key == self.actions["turn_left"]:
                 self.rot_vel = 0
 
-            elif event.key == pg.K_RIGHT:
+            elif event.key == self.actions["turn_right"]:
                 self.rot_vel = 0
 
         if event.type == pg.MOUSEMOTION:
@@ -193,16 +205,21 @@ class Player:
     def draw_2d(self, surf: pg.Surface) -> None:
         size: int = 8
         points: list[tuple[int, int]] = []
+        scale: tuple[float, float] = (
+            surf.get_width() / 512,
+            surf.get_height() / 512,
+        )
+
         for i in range(-1, 2):
-            if i == 0: scale: int = 2
-            else: scale: int = 1
+            if i == 0: dist: int = 2
+            else: dist: int = 1
 
             current_angle: float = self.angle + i * math.tau / 3
-            scaled: int = scale * size
+            scaled: int = dist * size
             
             points.append((
-                int(scaled * math.cos(current_angle) + self.x),
-                int(scaled * math.sin(current_angle) + self.y)
+                int((scaled * math.cos(current_angle) + self.x) * scale[0]),
+                int((scaled * math.sin(current_angle) + self.y) * scale[1])
             ))
 
         pg.draw.polygon(surf, (255, 128, 0), points)
@@ -221,4 +238,12 @@ class Player:
         entities.sort(key=sort_func, reverse=True)
 
         for ray in sorted_rays:
+            if len(entities) > 0:
+                if not (entities[0].plane_dist is None
+                or ray.plane_dist is None):
+                    if entities[0].plane_dist > ray.plane_dist:
+                        entities.pop(0).draw_3d(surf)
             ray.draw_3d(surf, step_x, ray.i)
+
+        for entity in entities:
+            entity.draw_3d(surf)
