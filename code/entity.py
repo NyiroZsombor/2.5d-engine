@@ -1,11 +1,12 @@
 import pygame as pg
 import json
 import preload
-from player import Player
-from ray import Ray
+from camera import Camera
 from tile_map import TileMap
+from map_object import MapObject
+from kinematic_entity import KinematicEntity
 
-class Entity:
+class Entity(MapObject, KinematicEntity):
     sprites: dict[str, pg.Surface] = {}
 
     def init() -> None:
@@ -19,37 +20,30 @@ class Entity:
 
     def __init__(self, name: str, x: float,
     y: float, tile_map: TileMap) -> None:
+        KinematicEntity.__init__(self, x, y, 8, 8, tile_map)
         self.name = name
-        self.x = x
-        self.y = y
         self.tile_map = tile_map
 
 
-    def update(self, player: Player) -> None:
+    def update(self, cam: Camera) -> None:
+        self.move()
+        self.calculate_3d(cam)
+
+
+    def calculate_3d(self, cam: Camera) -> None:
         self.edges: tuple[float, float, float, float] = (
-            player.get_camera_edges(self.x, self.y)
+            cam.get_camera_edges(self.x, self.y)
         )
         self.plane_dist: float | None = (
-            player.get_point_plane_dist(self.x, self.y, self.edges)
+            cam.get_point_plane_dist(self.x, self.y, self.edges)
         )
         self.cam_pos: float | None = (
-            player.get_point_screen_pos(self.x, self.y, self.edges)
+            cam.get_point_screen_pos(self.x, self.y, self.edges)
         )
-        self.inv_dist: float | None = self.calculate_inv_dist()
-        self.height: float | None = None
-        if not self.inv_dist is None:
-            self.scale = Ray.calculate_wall_height(
-                self.inv_dist, Ray.height_diff, Ray.min_height
-            )
+        self.inv_plane_dist: float | None = self.calculate_inv_plane_dist()
 
-
-    def calculate_inv_dist(self) -> float | None:
-        if self.plane_dist is None: return None
-
-        norm_dist: float = self.plane_dist / (
-            self.tile_map.tile_size * Ray.depth
-        )
-        return 1 - norm_dist
+        if not self.inv_plane_dist is None:
+            self.scale = self.calculate_wall_scale()
 
 
     def draw_2d(self, surf: pg.Surface) -> None:
@@ -57,8 +51,8 @@ class Entity:
             surf.get_width() / 512,
             surf.get_height() / 512,
         )
-        rx: int = 16 * scale[0]
-        ry: int = 16 * scale[1]
+        rx: int = int(16 * scale[0])
+        ry: int = int(16 * scale[1])
 
         pg.draw.ellipse(surf, 0xFF0000, (
             int((self.x - rx // 2) * scale[0]),
@@ -70,14 +64,12 @@ class Entity:
     def draw_3d(self, surf: pg.Surface) -> None:
         if self.cam_pos is None or self.plane_dist is None: return
         if self.cam_pos > 1 or self.cam_pos < 0: return
-        if self.inv_dist < 0: return
+        if self.inv_plane_dist < 0: return
 
         sprite: pg.Surface = Entity.sprites[self.name]
         sprite = pg.transform.scale_by(sprite, self.scale)
 
-        wall_height: float = Ray.calculate_wall_height(
-            self.inv_dist, Ray.height_diff, Ray.min_height
-        ) * surf.get_height()
+        wall_height: float = self.calculate_wall_scale() * surf.get_height()
 
         x: int = (
             int(surf.get_width() * self.cam_pos)
@@ -87,7 +79,7 @@ class Entity:
             surf.get_height() / 2 + wall_height / 2 - sprite.get_height()
         )
 
-        tint: int = int(255 * self.inv_dist)
+        tint: int = int(255 * self.inv_plane_dist ** 0.5)
         tint = tint + (tint << 8) + (tint << 16)
         sprite.fill(tint, special_flags=pg.BLEND_RGB_MULT)
 

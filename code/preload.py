@@ -51,8 +51,7 @@ def get_sprites(name: str) -> pg.Surface:
 
     return pg.transform.scale_by((img), 8)
 
-def get_gradient(
-start: tuple[int, int, int],
+def get_gradient(start: tuple[int, int, int],
 end: tuple[int, int, int]) -> pg.Surface:
     assets_path: str = ""
     with open("../paths.json") as file:
@@ -98,9 +97,8 @@ def get_minimap_effect() -> pg.Surface:
     img.save(path)
     return pg.image.load(path)
 
-def get_vignette(
-start: tuple[int, int, int],
-end: tuple[int, int, int]) -> None:
+def get_vignette(start: tuple[int, int, int],
+end: tuple[int, int, int], name: str) -> pg.Surface:
     assets_path: str = ""
     with open("../paths.json") as file:
         paths: dict[str, str] = json.load(file)
@@ -112,20 +110,22 @@ end: tuple[int, int, int]) -> None:
     img: Image.Image = Image.new("RGB", (size, size))
     draw: ImageDraw.ImageDraw = ImageDraw.Draw(img)
     p: int = 64
-    s: float = 0.75
+    s: float = 0.71
 
     for i in range(p, 0, -1):
         t: float = (i / p)
-        c: float = t**3
-        draw.circle((x, y), int(t * size * s), (
+        c: float = t**4
+        r2: float = int(t * size * s)
+        draw.ellipse((x - r2, y - r2, x + r2, y + r2), (
             int((end[0] - start[0]) * c + start[0]),
             int((end[1] - start[1]) * c + start[1]),
             int((end[2] - start[2]) * c + start[2])
         ))
 
-    path: str = assets_path + "/vignette.jpg"
+    path: str = assets_path + "/" + name + ".jpg"
     img.save(path)
     return pg.image.load(path)
 
 if __name__ == "__main__":
-    get_vignette((255, 255, 255), (0, 0, 0))
+    get_vignette((255, 255, 255), (0, 0, 0), "vignette")
+    get_vignette((255, 255, 255), (255, 0, 0), "low_health_vignette")

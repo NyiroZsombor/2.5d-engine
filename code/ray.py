@@ -2,12 +2,9 @@ import pygame as pg
 import math
 from tile_map import TileMap
 from tile import Tile
-# TODO: angle = 90°, tan(angle)?
-class Ray:
-    depth: int = 8
-    min_height: float = 0.2
-    max_height: float = 0.8
-    height_diff: float = max_height - min_height
+from map_object import MapObject
+
+class Ray(MapObject):
 
     def __init__(self, x: float, y: float, angle: float, tile_map: TileMap):
         self.tile_map = tile_map
@@ -23,6 +20,7 @@ class Ray:
         self.y = y
         self.update_position()
 
+
     def set_angle(self, angle: float) -> None:
         self.angle = angle
         self.update_angle()
@@ -36,6 +34,7 @@ class Ray:
         
         self.angle_diff = self.angle - angle
         self.plane_dist = self.dist * math.cos(self.angle_diff)
+        self.inv_plane_dist = self.calculate_inv_plane_dist()
 
 
     def update_position(self) -> None:
@@ -45,7 +44,6 @@ class Ray:
         if self.angle < math.pi / 2 or self.angle > math.pi * 3 / 2:
             self.first_vx += tile_size
         self.first_vy: float = self.y + (self.first_vx - self.x) * self.slope
-
         
         self.first_hy: float = self.y - self.y % tile_size
         if self.angle < math.pi: self.first_hy += tile_size
@@ -133,8 +131,6 @@ class Ray:
             (self.abs_int[1] / self.tile_size) % 1
         )
 
-        self.tile_map.get_tile(*self.grid_int)
-
         self.dist = math.hypot(*self.rel_int)
 
     
@@ -212,7 +208,6 @@ class Ray:
             pg.draw.circle(surf, color, center, 1)
 
 
-
     def draw_v(self, surf: pg.Surface) -> None:
         for t in range(self.depth):
             if self.step_v is None: break
@@ -238,6 +233,7 @@ class Ray:
                 ), 2
             )
 
+
     def draw_text(self, surf: pg.Surface) -> None:
         text: pg.Surface = self.font.render(
             str(self.sub_grid_int), False, 0, 0xFFFFFF
@@ -251,13 +247,10 @@ class Ray:
 
     def draw_3d(self, surf: pg.Surface, step_x: int, i: int) -> None:
         if not self.has_int: return
-        inv_dist: float = self.calculate_inv_dist()
-        if inv_dist <= 0: return
+        if self.inv_plane_dist <= 0: return
         
         screen_height: int = surf.get_height()
-        wall_height: int = Ray.calculate_wall_height(
-            inv_dist, Ray.height_diff, Ray.min_height
-        ) * screen_height
+        wall_height: int = self.calculate_wall_scale() * screen_height
         
         rect: tuple[int, int, int, int] = (
             step_x * i, int(screen_height / 2 - wall_height / 2),
@@ -265,21 +258,10 @@ class Ray:
         )
 
         if self.tile_int is None:
-            self.draw_3d_fallback(surf, rect, inv_dist)
+            self.draw_3d_fallback(surf, rect, self.inv_plane_dist)
             return
 
-        self.draw_slice(surf, inv_dist, rect)
-
-
-    def calculate_inv_dist(self) -> float:
-        norm_dist: float = self.plane_dist / (
-            self.tile_map.tile_size * self.depth
-        )
-        return 1 - norm_dist
-    
-
-    def calculate_wall_height(inv_dist: float, diff: float, min: float) -> float:
-        return diff * inv_dist ** 2 + min
+        self.draw_slice(surf, self.inv_plane_dist, rect)
     
 
     def draw_3d_fallback(self, surf: pg.Surface,

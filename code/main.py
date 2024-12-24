@@ -1,8 +1,8 @@
 import pygame as pg
 import sys
 import preload
-import time
 import json
+from time import time
 from player import Player
 from tile_map import TileMap
 from tile import Tile
@@ -13,11 +13,12 @@ class Game:
     def __init__(self) -> None:
         self.init_dependencies()
 
-        self.paths: str = ""
+        self.paths: dict[str, str]
         with open("../paths.json") as file:
             self.paths = json.load(file)
 
         self.init_display()
+        self.init_effects()
 
         self.tile_map: TileMap = TileMap((16, 16), 32)
 
@@ -34,13 +35,14 @@ class Game:
         self.player: Player = Player(150, 150, self.tile_map)
         self.entities: list[Entity] = [
             Entity("ghost", 300, 300, self.tile_map),
-            Entity("box", 100, 50, self.tile_map)
+            Entity("box", 100, 50, self.tile_map),
+            Entity("bullet", 200, 100, self.tile_map)
         ]
         self.clock: pg.time.Clock = pg.time.Clock()
         self.ticks: int = 0
         self.fps_start_ticks: int = 0
         self.monitor_fps: bool = False
-        self.fps_start: float = time.time()
+        self.fps_start: float = time()
         self.mouse_pos: tuple[int, int] = (0, 0)
 
         self.game_loop()
@@ -56,17 +58,15 @@ class Game:
 
     def init_display(self) -> None:
         pg.display.set_caption("2.5D renderer")
-        pg.display.set_icon(pg.image.load("../assets/icon.png"))
-
+        pg.display.set_icon(pg.image.load(self.paths["assets"] + "/icon.png"))
 
         self.screen_size: tuple[int, int] = (768, 704)
         screen: pg.Surface = pg.display.set_mode(self.screen_size)
         main_view: pg.Surface = pg.surface.Surface((768, 512))
         minimap: pg.Surface = pg.surface.Surface((256, 256))
         ui: pg.Surface = pg.surface.Surface((768, 192))
-        self.ui_img: pg.Surface = pg.transform.scale2x(
-            pg.image.load(self.paths["ui"] + "/ui.png")
-        )
+
+        self.load_resources()
 
         self.screens: dict[str, pg.Surface] = {
             "minimap": minimap,
@@ -75,9 +75,26 @@ class Game:
             "ui": ui
         }
 
+
+    def load_resources(self) -> None:
+        self.ui_img: pg.Surface = self.load_ui_img("ui")
+        self.ammo_img: pg.Surface = self.load_ui_img("ammo")
+        self.magazine_img: pg.Surface = self.load_ui_img("magazine")
+        self.full_heart_img: pg.Surface = self.load_ui_img("full_heart")
+        self.empty_heart_img: pg.Surface = self.load_ui_img("empty_heart")
+
         self.font: pg.font.Font = pg.font.Font(
             self.paths["fonts"] + "/Roboto-Light.ttf", 12
         )
+
+
+    def load_ui_img(self, name: str) -> pg.Surface:
+        return pg.transform.scale2x(
+            pg.image.load(self.paths["ui"] + "/" + name + ".png")
+        )
+        
+
+    def init_effects(self) -> None:
         self.gradient: pg.Surface = preload.get_gradient(
             (0, 0, 0), (255, 255, 255)
         )
@@ -89,23 +106,29 @@ class Game:
             self.minimap_effect, (128, 128)
         )
         self.vignette: pg.Surface = preload.get_vignette(
-            (255, 255, 255), (0, 0, 0)
+            (255, 255, 255), (0, 0, 0), "vignette"
         )
         self.vignette = pg.transform.scale(
             self.vignette, self.screens["main_view"].get_size()
+        )
+        self.low_health_vignette: pg.Surface = preload.get_vignette(
+            (255, 255, 255), (255, 0, 0), "low_health_vignette"
+        )
+        self.low_health_vignette = pg.transform.scale(
+            self.low_health_vignette, self.screens["main_view"].get_size()
         )
 
 
     def game_loop(self) -> None:
         while True:
-            if time.time() - self.fps_start > 1 and self.ticks > 0:
+            if time() - self.fps_start > 1 and self.ticks > 0:
                 if self.monitor_fps:
                     fps: float = round(
-                        1 / ((time.time() - self.fps_start)
+                        1 / ((time() - self.fps_start)
                         / (self.ticks - self.fps_start_ticks))
                     )
                     print(f"fps: {fps}")
-                self.fps_start = time.time()
+                self.fps_start = time()
                 self.fps_start_ticks = self.ticks
             self.ticks += 1
 
@@ -113,11 +136,7 @@ class Game:
                 self.handle_event(event)
 
             self.update()
-
-            self.screens["screen"].fill(0)
-
-            self.draw_main_view()
-            self.draw_ui()
+            self.draw()
 
             pg.display.flip()
             self.clock.tick(60 if not self.monitor_fps else 0)
@@ -135,10 +154,10 @@ class Game:
 
             if not self.player.mouse_captured: return
 
-            w34: int = self.screen_size[0] * 3 / 4
-            w4: int = self.screen_size[0] / 4
-            h34: int = self.screen_size[1] * 3 / 4
-            h4: int = self.screen_size[1] / 4
+            w34: int = int(self.screen_size[0] * 3 / 4)
+            w4: int = int(self.screen_size[0] / 4)
+            h34: int = int(self.screen_size[1] * 3 / 4)
+            h4: int = int(self.screen_size[1] / 4)
 
             if event.pos[0] <= w4 and event.rel[0] < 0:
                 pg.mouse.set_pos(w34, event.pos[1])
@@ -152,9 +171,16 @@ class Game:
 
 
     def update(self) -> None:
-        self.player.update()
+        self.player.update(self.entities)
         for entity in self.entities:
             entity.update(self.player)
+
+
+    def draw(self) -> None:
+        self.screens["screen"].fill(0)
+
+        self.draw_main_view()
+        self.draw_ui()
 
 
     def draw_main_view(self) -> None:
@@ -164,16 +190,33 @@ class Game:
 
         self.player.draw_3d(self.screens["main_view"], self.entities)
 
-        self.screens["main_view"].blit(
-            self.vignette, (0, 0), special_flags=pg.BLEND_RGB_MULT
+        has_taken_damage: bool = (
+            self.player.last_damage_time + 0.5 >= time()
         )
+        low_health: bool = self.player.health == 1
+        period: float = (self.player.last_damage_time + time()) % 1
+        blink: bool = period < 0.5
+
+        if has_taken_damage or (low_health and blink):
+            self.screens["main_view"].blit(
+                self.low_health_vignette, (0, 0), special_flags=pg.BLEND_RGB_MULT
+            )
+        else:
+            self.screens["main_view"].blit(
+                self.vignette, (0, 0), special_flags=pg.BLEND_RGB_MULT
+            )
+
         self.screens["screen"].blit(self.screens["main_view"], (0, 0))
 
 
     def draw_ui(self) -> None:
         self.screens["ui"].blit(self.ui_img, (0, 0))
+
         self.draw_minimap()
         self.draw_name()
+        self.draw_ammo()
+        self.draw_health()
+
         self.screens["screen"].blit(self.screens["ui"], (0, 512))
 
 
@@ -202,8 +245,12 @@ class Game:
             area[0], area[1] + int((self.ticks / 2) % h2) - h2
         )
 
-        self.screens["minimap"].blit(self.minimap_effect, pos2, special_flags=pg.BLEND_RGB_ADD)
-        self.screens["minimap"].blit(self.minimap_effect, pos3, special_flags=pg.BLEND_RGB_ADD)
+        self.screens["minimap"].blit(
+            self.minimap_effect, pos2, special_flags=pg.BLEND_RGB_ADD
+        )
+        self.screens["minimap"].blit(
+            self.minimap_effect, pos3, special_flags=pg.BLEND_RGB_ADD
+        )
         self.screens["ui"].blit(self.screens["minimap"], pos, area)
 
 
@@ -213,8 +260,45 @@ class Game:
         if text.get_width() > 152:
             text = pg.transform.scale(text, (152, text.get_height()))
         self.screens["ui"].blit(
-            text, (int(231 - text.get_width() / 2), 550)
+            text, (int(231 - text.get_width() / 2), 36)
         )
+
+
+    def draw_ammo(self) -> None:
+        p: Player = self.player
+        x: int = 153
+        y1: int = 90
+        y_cd: int = y1 + self.ammo_img.get_height() + 4
+        y2: int = 138
+        w = (self.ammo_img.get_width() + 2) * 10
+
+        for i in range(p.ammo):
+            offset: int = (self.ammo_img.get_width() + 2) * i
+            self.screens["ui"].blit(self.ammo_img, (x + offset, y1))
+
+        if p.ammo > 0:
+            t: int = int((time() - p.last_shot_time) / p.shooting_period * w)
+        else:
+            t: int = int((time() - p.last_shot_time) / p.reload_time * w)
+
+        t = min(t, w)
+        if t < w:
+            start: tuple[int, int] = (x, y_cd)
+            end: tuple[int, int] = (x + w - t, y_cd)
+            pg.draw.line(self.screens["ui"], 0x00DD00, start, end)
+
+        for i in range(self.player.magazine):
+            offset: int = (self.magazine_img.get_width() + 2) * i
+            self.screens["ui"].blit(self.magazine_img, (x + offset, y2))
+
+
+    def draw_health(self) -> None:
+        x: int = 499
+        y: int = 35
+        w: int = self.full_heart_img.get_width()
+
+        for i in range(self.player.health):
+            self.screens["ui"].blit(self.full_heart_img, (x + i * (w + 2), y))
 
 
 if __name__ == "__main__":

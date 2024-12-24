@@ -1,63 +1,66 @@
 import pygame as pg
 import math
-from ray import Ray
+from time import time
 from tile_map import TileMap
+from bullet import Bullet
+from entity import Entity
+from camera import Camera
+from kinematic_entity import KinematicEntity
 
-class Player:
+class Player(Camera, KinematicEntity):
 
     def __init__(self, x: float, y: float, tile_map: TileMap):
-        self.x = x
-        self.y = y
-        self.tile_map = tile_map
+        Camera.__init__(self, x, y, tile_map)
+        KinematicEntity.__init__(self, x, y, 8, 8, tile_map)
 
-        self.vel_x: float = 0
-        self.vel_y: float = 0
-        self.speed: float = 0.75
+        self.init_movement()
+        self.init_combat()
 
-        self.angle: float = 0
+
+    def init_movement(self) -> None:
         self.rot_vel: float = 0
         self.rot_speed: float = math.pi / 120
         self.mouse_captured: bool = False
+        self.movement_angle: float | None = None
 
-        self.fov: float = math.pi / 2
-        self.ray_count: int = 128
-        self.create_rays()
-
-        self.actions: dict[str, int] = {
+        self.action_keys: dict[str, int] = {
             "forward": pg.K_w,
             "backward": pg.K_s,
             "turn_left": pg.K_LEFT,
             "turn_right": pg.K_RIGHT,
             "move_left": pg.K_a,
-            "move_right": pg.K_d
+            "move_right": pg.K_d,
+            "shoot": pg.K_SPACE
         }
 
+        self.actions: dict[str, bool] = {}
 
-    def create_rays(self) -> None:
-        self.rays: list[Ray] = []
-        for i in range(self.ray_count):
-            t: float = i / (self.ray_count - 1)
-            angle: float = self.angle + t * self.fov - self.fov / 2
-            ray: Ray = Ray(self.x, self.y, angle, self.tile_map)
-            ray.i = i
-            self.rays.append(ray)
+        for key in self.action_keys.keys():
+            self.actions[key] = False
+
+
+    def init_combat(self) -> None:
+        self.max_health: int = 5
+        self.max_magazine: int = 5
+        self.ammo_per_magazine: int = 6
+
+        self.damage_immunity: float = 2
+        self.last_damage_time: float = 0
+        self.health: int = self.max_health
+        self.ammo: int = self.ammo_per_magazine
+        self.magazine: int = self.max_magazine
+
+        self.reload_time: float = 3
+        self.shooting_period: float = 1
+        self.last_shot_time: float = time() - self.shooting_period
+        self.bullets: list[Bullet] = []
 
 
     def handle_event(self, event: pg.event.Event) -> None:
         if event.type == pg.KEYDOWN:
-            if event.key == self.actions["forward"]:
-                self.vel_x += self.speed
-                self.vel_y += self.speed
-
-            elif event.key == self.actions["backward"]:
-                self.vel_x -= self.speed
-                self.vel_y -= self.speed
-
-            elif event.key == self.actions["turn_left"]:
-                self.rot_vel = -self.rot_speed
-
-            elif event.key == self.actions["turn_right"]:
-                self.rot_vel = self.rot_speed
+            for key in self.action_keys.keys():
+                if event.key == self.action_keys[key]:
+                    self.actions[key] = True
 
             if event.key == pg.K_ESCAPE:
                 self.mouse_captured = not self.mouse_captured
@@ -65,18 +68,9 @@ class Player:
                 # print(f"{self.mouse_captured = }")
 
         elif event.type == pg.KEYUP:
-            if event.key == self.actions["forward"]:
-                self.vel_x -= self.speed
-                self.vel_y -= self.speed
-            elif event.key == self.actions["backward"]:
-                self.vel_x += self.speed
-                self.vel_y += self.speed
-
-            elif event.key == self.actions["turn_left"]:
-                self.rot_vel = 0
-
-            elif event.key == self.actions["turn_right"]:
-                self.rot_vel = 0
+            for key in self.action_keys.keys():
+                if event.key == self.action_keys[key]:
+                    self.actions[key] = False
 
         if event.type == pg.MOUSEMOTION:
             if not self.mouse_captured: return
@@ -84,17 +78,19 @@ class Player:
             self.rot_vel = event.rel[0] * math.pi / 512
 
 
-    def update(self) -> None:
-        prev_x: float = self.x
-        prev_y: float = self.y
-        self.x += self.vel_x * math.cos(self.angle)
-        self.y += self.vel_y * math.sin(self.angle)
-        tile_x: int = int(self.x / self.tile_map.tile_size)
-        tile_y: int = int(self.y / self.tile_map.tile_size)
+    def update(self, entities: list[Entity]) -> None:
+        self.handle_movement()
 
-        if not self.tile_map.get_tile(tile_x, tile_y) is None:
-            self.x = prev_x
-            self.y = prev_y
+        if not self.movement_angle is None:
+            dx: float = math.cos(self.movement_angle + self.angle)
+            dy: float = math.sin(self.movement_angle + self.angle)
+            self.vel_x = dx * self.speed
+            self.vel_y = dy * self.speed
+        else:
+            self.vel_x = 0
+            self.vel_y = 0
+
+        self.move()
 
         self.angle += self.rot_vel
         if self.mouse_captured: self.rot_vel /= 2
@@ -105,101 +101,85 @@ class Player:
         if self.angle < 0:
             self.angle = self.angle + math.tau
 
-        self.update_rays()        
+        self.update_combat(entities)
+        self.update_rays()
 
 
-    def update_rays(self) -> None:
-        for i in range(self.ray_count):
-            ray: Ray = self.rays[i]
-            t: float = i / (self.ray_count - 1)
-            angle: float = (
-                self.angle + t * self.fov - self.fov / 2
-            )
+    def handle_movement(self) -> None:
+        if (self.actions["turn_left"]
+        == self.actions["turn_right"]): self.rot_vel = 0
+        if self.actions["turn_left"]: self.rot_vel = -self.rot_speed
+        if self.actions["turn_right"]: self.rot_vel = self.rot_speed
 
-            if angle >= math.tau:
-                angle -= math.tau
-            if angle < 0:
-                angle += math.tau
+        count: int = 0
+        movment_key: list[str] = [
+            "forward", "backward", "move_left", "move_right"
+        ]
+        for key in self.action_keys.keys():
+                if not key in movment_key: continue
+                if self.actions[key]: count += 1
 
-            ray.set_angle(angle)
-            ray.set_xy(self.x, self.y)
-            ray.update()
-            ray.update_plane_dist(self.angle)
-
-
-    def is_point_in_fov(self, x: float, y: float) -> bool:
-        x -= self.x
-        y -= self.y
-
-        left_ray: Ray = self.rays[0]
-        right_ray: Ray = self.rays[-1]
-
-        xl = x * left_ray.sign_v
-        yl = y * left_ray.sign_v
-        xr = x * right_ray.sign_v
-        yr = y * right_ray.sign_v
-
-        return (
-            left_ray.slope * xl < yl and
-            right_ray.slope * xr > yr
-        )
+        if count == 0: self.movement_angle = None
+        else: self.calculate_movement_angle(count)
 
 
-    def get_camera_edges(self, x: float, y: float) -> tuple[float, float, float, float]:
-        x -= self.x
-        y -= self.y
+    def calculate_movement_angle(self, count: int) -> float:
+        angle_sum: float = 0
 
-        left_ray: Ray = self.rays[0]
-        right_ray: Ray = self.rays[-1]
-        parallel_slope: float = math.tan(self.angle + math.pi / 2)
+        if self.actions["backward"]: angle_sum += math.pi
+        if self.actions["move_right"]: angle_sum += math.pi / 2
+        if self.actions["move_left"] and self.actions["backward"]:
+            angle_sum += math.pi * 3 / 2
+        elif self.actions["move_left"]:
+            angle_sum -= math.pi / 2
 
-        a: float = (x * parallel_slope - y)
-        x_n: float = a / (parallel_slope - left_ray.slope)
-        x_m: float = a / (parallel_slope - right_ray.slope)
-        y_n: float = x_n * left_ray.slope
-        y_m: float = x_m * right_ray.slope
+        self.movement_angle = angle_sum / count
 
-        return (x_n, x_m, y_m, y_n)
-    
 
-    def get_point_screen_pos(self, x: float, y: float, 
-    edges: tuple[float, float, float, float]) -> float | None:
-        if not self.is_point_in_fov(x, y): return None
+    def update_combat(self, entities: list[Entity]) -> None:
+        ready: bool = self.last_shot_time + self.reload_time < time()
+        no_ammo: bool = self.ammo < 1
+        has_magazine: bool = self.magazine > 0
 
-        x -= self.x
-        y -= self.y
+        if ready and no_ammo and has_magazine:
+            self.magazine -= 1
+            self.ammo = self.ammo_per_magazine
 
-        x_n, x_m, y_m, y_n = edges
+        if self.actions["shoot"]:
+            self.shoot()
 
-        if ((self.angle >= math.pi / 4
-        and self.angle < math.pi * 3 / 4) or 
-        (self.angle >= math.pi * 5 / 4
-        and self.angle < math.pi * 7 / 4)):
-            t: float = (x - x_m) / (x_n - x_m)
-        else:
-            t: float = (y - y_m) / (y_n - y_m)
+        idx_to_remove: list[Bullet] = []
 
-        return 1 - t
+        for i in range(len(self.bullets)):
+            bullet: Bullet = self.bullets[i]
+
+            if bullet.update(self):
+                idx_to_remove.append(i)
+                continue
+            
+            for entity in entities:
+                if bullet.collide(entity):
+                    idx_to_remove.append(i)
+
+        for entity in entities:
+            if self.last_damage_time + self.damage_immunity < time():
+                if self.collide(entity):
+                    self.last_damage_time = time()
+                    self.health -= 1
+
+        while len(idx_to_remove) > 0:
+            idx: int = idx_to_remove.pop()
+            del self.bullets[idx]
+
+
+    def shoot(self) -> None:
+        if self.last_shot_time + self.shooting_period > time(): return
+        if self.ammo < 1: return
         
+        self.ammo -= 1
+        self.last_shot_time = time()
 
-    def get_point_plane_dist(self, x: float, y: float, 
-    edges: tuple[float, float, float, float]) -> float | None:
-        if not self.is_point_in_fov(x, y): return None
-
-        x -= self.x
-        y -= self.y
-
-        x_n, x_m, y_m, y_n = edges
-        d_n: float = x_n**2 + y_n**2
-
-        return math.sqrt(
-            d_n - ((x_m - x_n) / 2)**2 -
-            ((y_m - y_n) / 2)**2
-        )
-        
-    def draw_rays(self, surf: pg.Surface) -> None:
-        self.rays[0].draw(surf)
-        self.rays[-1].draw(surf)
+        self.bullets.append(Bullet(self.x, self.y,self.tile_map, self.angle))
 
 
     def draw_2d(self, surf: pg.Surface) -> None:
@@ -225,25 +205,7 @@ class Player:
         pg.draw.polygon(surf, (255, 128, 0), points)
 
 
-    def draw_3d(self, surf: pg.Surface, entities: list) -> None:
-        def sort_func(x: any) -> float:
-            if not x.plane_dist is None: return x.plane_dist
-            else: return 0
-
-        step_x: int = int(surf.get_width() / self.ray_count)
-
-        sorted_rays: list[Ray] = self.rays.copy()
-        entities = entities.copy()
-        sorted_rays.sort(key=sort_func, reverse=True)
-        entities.sort(key=sort_func, reverse=True)
-
-        for ray in sorted_rays:
-            if len(entities) > 0:
-                if not (entities[0].plane_dist is None
-                or ray.plane_dist is None):
-                    if entities[0].plane_dist > ray.plane_dist:
-                        entities.pop(0).draw_3d(surf)
-            ray.draw_3d(surf, step_x, ray.i)
-
-        for entity in entities:
-            entity.draw_3d(surf)
+    def draw_3d(self, surf: pg.Surface, entities: list[Entity]) -> None:
+        union = entities.copy()
+        union.extend(self.bullets)
+        Camera.draw_3d(self, surf, union)
